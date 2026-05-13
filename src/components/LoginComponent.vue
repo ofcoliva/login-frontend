@@ -2,6 +2,8 @@
 import { ref, reactive } from 'vue'
 
 const isLogin = ref(true)
+const isLoading = ref(false)
+const errorMessage = ref('')
 
 const form = reactive({
   username: '',
@@ -13,11 +15,80 @@ const form = reactive({
 
 const toggleAuth = () => {
   isLogin.value = !isLogin.value
+  errorMessage.value = ''
 }
 
-const handleSubmit = () => {
-  const action = isLogin.value ? 'Login' : 'Registro'
-  console.log(`Realizando ${action} com:`, form)
+const handleSubmit = async () => {
+  // Validações
+  if (!isLogin.value) {
+    // Validar confirmação de senha
+    if (form.password !== form.confirmPassword) {
+      console.error('Erro: As senhas não conferem')
+      // adicionar acionador do campo de erro
+      errorMessage.value = 'As senhas não conferem'
+      return
+    }
+
+    // Validar concordância com termos
+    if (!form.agreeTerms) {
+      console.error('Erro: Você deve concordar com os termos')
+      return
+    }
+  }
+
+  errorMessage.value = ''
+  isLoading.value = true
+
+  try {
+    const endpoint = isLogin.value ? '/login' : '/register'
+    const url = `http://localhost:8000/api/v1${endpoint}`
+
+    const payload = isLogin.value
+      ? { username: form.username, password: form.password }
+      : { username: form.username, email: form.email, password: form.password }
+
+    const requestOptions: RequestInit = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      credentials: 'include',
+    }
+
+    const response = await fetch(url, requestOptions)
+
+    // LÓGICA DE TRATAMENTO DE ERRO DA API
+    if (!response.ok) {
+      let messageToShow = `Erro ${response.status}`
+
+      try {
+        const errorData = await response.json()
+        // Aqui pegamos o campo 'detail' que você mencionou
+        messageToShow = errorData.detail || errorData.message || messageToShow
+      } catch {
+        // Caso o corpo da resposta não seja um JSON válido
+        messageToShow = `Erro: ${response.statusText}`
+      }
+
+      throw new Error(messageToShow)
+    }
+
+    const result = await response.json()
+    console.log('Sucesso:', result)
+
+    // Limpar form após sucesso
+    Object.assign(form, {
+      username: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+      agreeTerms: false,
+    })
+  } catch (error) {
+    // Aqui a mensagem do "throw new Error" cai no ref 'errorMessage'
+    errorMessage.value = error instanceof Error ? error.message : 'Erro desconhecido'
+  } finally {
+    isLoading.value = false
+  }
 }
 </script>
 
@@ -63,7 +134,6 @@ const handleSubmit = () => {
 
             <div class="checkbox-group">
               <div class="custom-checkbox">
-                <!-- O segredo: width/height 100% e opacity 0 para ser clicável -->
                 <input v-model="form.agreeTerms" type="checkbox" id="terms" required />
                 <span class="checkmark"></span>
               </div>
@@ -72,8 +142,12 @@ const handleSubmit = () => {
           </div>
         </TransitionGroup>
 
-        <button type="submit" class="btn-primary">
-          {{ isLogin ? 'Entrar' : 'Registrar' }}
+        <div v-if="errorMessage" class="error-message">
+          {{ errorMessage }}
+        </div>
+
+        <button type="submit" class="btn-primary" :disabled="isLoading">
+          {{ isLoading ? 'Processando...' : isLogin ? 'Entrar' : 'Registrar' }}
         </button>
       </form>
 
@@ -85,231 +159,4 @@ const handleSubmit = () => {
   </div>
 </template>
 
-<style scoped>
-.auth-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  background-color: #1a1a1a;
-  color: white;
-  font-family: 'Inter', sans-serif;
-}
-
-.auth-card {
-  background-color: #242424;
-  padding: 2.5rem;
-  border-radius: 16px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
-  width: 100%;
-  max-width: 420px;
-  border: 1px solid #333;
-  overflow: hidden;
-}
-
-.logo {
-  text-align: center;
-  margin-bottom: 1.5rem;
-}
-
-.logo img {
-  width: 64px;
-  border-radius: 50%;
-  margin-bottom: 1rem;
-}
-
-.logo h2 {
-  color: #42b883;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.auth-form {
-  display: flex;
-  flex-direction: column;
-}
-
-.input-group {
-  margin-bottom: 1rem;
-  display: flex;
-  flex-direction: column;
-}
-
-label {
-  font-size: 0.85rem;
-  color: #aaa;
-  margin-bottom: 0.4rem;
-}
-
-input[type='text'],
-input[type='email'],
-input[type='password'] {
-  width: 100%;
-  padding: 0.85rem 1rem;
-  border-radius: 10px;
-  border: 1.5px solid #3d3d3d;
-  background-color: #1a1a1a;
-  color: white;
-  font-size: 1rem;
-  transition: all 0.3s ease;
-  box-sizing: border-box;
-}
-
-input:focus {
-  outline: none;
-  border-color: #42b883;
-}
-
-/* --- CHECKBOX CORRIGIDA --- */
-.checkbox-group {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  margin: 0.5rem 0 1.5rem 0;
-  position: relative;
-}
-
-.custom-checkbox {
-  position: relative;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
-
-.custom-checkbox input {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  opacity: 0; /* Invisível, mas funcional */
-  cursor: pointer;
-  z-index: 2; /* Fica por cima da caixa visual */
-  margin: 0;
-}
-
-.checkmark {
-  position: absolute;
-  top: 0;
-  left: 0;
-  height: 20px;
-  width: 20px;
-  background-color: #1a1a1a;
-  border: 2px solid #3d3d3d;
-  border-radius: 6px;
-  transition: all 1.1s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 1;
-}
-
-/* Interação suave */
-.custom-checkbox:hover input ~ .checkmark {
-  border-color: #42b883;
-}
-
-.custom-checkbox input:checked ~ .checkmark {
-  background-color: #42b883;
-  border-color: #42b883;
-  transform: scale(1.05);
-}
-
-.checkmark:after {
-  content: '';
-  position: absolute;
-  display: none;
-  left: 6px;
-  top: 2px;
-  width: 5px;
-  height: 10px;
-  border: solid #1a1a1a;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-
-.custom-checkbox input:checked ~ .checkmark:after {
-  display: block;
-  animation: check-pop 1.1s ease-out;
-}
-
-.checkbox-group label {
-  cursor: pointer;
-  color: #ccc;
-  font-size: 0.85rem;
-  transition: color 0.3s;
-}
-
-.checkbox-group:has(input:checked) label {
-  color: #42b883;
-}
-
-@keyframes check-pop {
-  from {
-    opacity: 0;
-    transform: rotate(45deg) scale(0.5);
-  }
-  to {
-    opacity: 1;
-    transform: rotate(45deg) scale(1);
-  }
-}
-
-/* --- BOTÃO E TRANSIÇÕES --- */
-.btn-primary {
-  width: 100%;
-  padding: 0.9rem;
-  border-radius: 10px;
-  border: none;
-  background-color: #42b883;
-  color: #1a1a1a;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-primary:hover {
-  filter: brightness(1.1);
-  transform: translateY(-1px);
-}
-
-.toggle-text {
-  text-align: center;
-  margin-top: 1.5rem;
-  color: #777;
-  font-size: 0.9rem;
-}
-
-.toggle-text span {
-  color: #42b883;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-/* Animações Staggered */
-.staggered-move {
-  transition: transform 0.4s cubic-bezier(0.55, 0, 0.1, 1);
-}
-
-.staggered-enter-active {
-  transition: all 1.2s cubic-bezier(0.55, 0, 0.1, 1);
-}
-
-.staggered-leave-active {
-  transition: all 1.2s cubic-bezier(0.55, 0, 0.1, 1);
-  position: absolute;
-  width: 100%;
-  max-width: 340px;
-  opacity: 0;
-}
-
-.staggered-enter-from {
-  opacity: 0;
-  transform: translateY(-20px) scale(0.95);
-}
-
-.staggered-leave-to {
-  opacity: 0;
-  transform: translateY(10px) scale(0.95);
-}
-
-.extra-fields {
-  display: flex;
-  flex-direction: column;
-}
-</style>
+<style scoped src="../assets/login_style.css"></style>
