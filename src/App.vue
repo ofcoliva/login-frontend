@@ -1,85 +1,111 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
-import HelloWorld from './components/HelloWorld.vue'
+import { storeToRefs } from 'pinia'
+import ThemeToggle from '@/components/auth/ThemeToggle.vue'
+import { useAuthStore } from '@/stores/auth'
+
+const store = useAuthStore()
+const { isAuthenticated, sessionChecking } = storeToRefs(store)
 </script>
 
 <template>
-  <header>
-    <img alt="Vue logo" class="logo" src="@/assets/logo.svg" width="125" height="125" />
+  <div class="app-shell">
+    <header class="app-header">
+      <RouterLink to="/" class="app-header__brand">vue/auth</RouterLink>
 
-    <div class="wrapper">
-      <HelloWorld msg="You did it!" />
-
-      <nav>
-        <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/about">About</RouterLink>
+      <nav v-if="isAuthenticated" class="app-header__nav">
+        <RouterLink to="/" class="app-header__link">Dashboard</RouterLink>
+        <RouterLink to="/profile" class="app-header__link">Perfil</RouterLink>
+        <RouterLink to="/settings" class="app-header__link"> Configurações </RouterLink>
       </nav>
-    </div>
-  </header>
+      <nav v-else class="app-header__nav">
+        <RouterLink to="/login" class="app-header__link">Entrar</RouterLink>
+        <RouterLink to="/register" class="app-header__link">Criar conta</RouterLink>
+      </nav>
 
-  <RouterView />
+      <ThemeToggle class="app-header__theme" />
+    </header>
+
+    <RouterView v-if="!sessionChecking" v-slot="{ Component }">
+      <Transition name="page" mode="out-in">
+        <component :is="Component" />
+      </Transition>
+    </RouterView>
+    <div v-else class="app-shell__loading">Verificando sessão…</div>
+  </div>
 </template>
 
 <style scoped>
-header {
-  line-height: 1.5;
-  max-height: 100vh;
+.app-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
-.logo {
-  display: block;
-  margin: 0 auto 2rem;
+.app-shell__loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
 }
 
-nav {
-  width: 100%;
-  font-size: 12px;
-  text-align: center;
-  margin-top: 2rem;
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.9rem 2rem;
+  border-bottom: 1px solid var(--color-border);
+  background-color: color-mix(in srgb, var(--color-background) 85%, transparent);
+  backdrop-filter: blur(8px);
+  transition:
+    background-color 0.3s,
+    border-color 0.3s;
 }
 
-nav a.router-link-exact-active {
+.app-header__brand {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.app-header__brand:hover {
+  text-decoration: none;
+  color: var(--color-primary);
+}
+
+.app-header__nav {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.app-header__link {
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
+}
+
+.app-header__link:hover {
+  background-color: var(--color-background-mute);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.app-header__link.router-link-exact-active {
+  background-color: var(--color-background-mute);
   color: var(--color-text);
 }
 
-nav a.router-link-exact-active:hover {
-  background-color: transparent;
-}
-
-nav a {
-  display: inline-block;
-  padding: 0 1rem;
-  border-left: 1px solid var(--color-border);
-}
-
-nav a:first-of-type {
-  border: 0;
-}
-
-@media (min-width: 1024px) {
-  header {
-    display: flex;
-    place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
-  }
-
-  .logo {
-    margin: 0 2rem 0 0;
-  }
-
-  header .wrapper {
-    display: flex;
-    place-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  nav {
-    text-align: left;
-    margin-left: -1rem;
-    font-size: 1rem;
-
-    padding: 1rem 0;
-    margin-top: 1rem;
-  }
+.app-header__theme {
+  margin-left: auto;
 }
 </style>
