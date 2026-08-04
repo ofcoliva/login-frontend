@@ -1,0 +1,32 @@
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: edge
+
+api:
+  dashboard: true
+  insecure: true
+
+ping:
+  entryPoint: web
+
+metrics:
+  prometheus:
+    addEntryPointsLabels: true
+    addServicesLabels: true
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: ${ACME_EMAIL}
+      storage: /letsencrypt/acme.json
+      caServer: ${ACME_CA_SERVER}
+      httpChallenge:
+        entryPoint: web

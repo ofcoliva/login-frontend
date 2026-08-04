@@ -1,0 +1,28 @@
+# Dependências e artefatos
+node_modules
+dist
+dist-ssr
+coverage
+*.tsbuildinfo
+
+# VCS e CI
+.git
+.github
+.gitignore
+
+# Env e segredos
+.env
+.env.*
+!.env.example
+
+# Testes e logs
+e2e
+playwright-report
+test-results
+*.log
+.eslintcache
+
+# Editores / SO
+.vscode
+.idea
+.DS_Store
