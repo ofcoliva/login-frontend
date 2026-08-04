@@ -13,6 +13,18 @@ export interface ForgotPasswordPayload {
   email: string
 }
 
+export interface ChangePasswordPayload {
+  current_password: string
+  new_password: string
+  /** IDs de sessões a MANTER; ausente = manter todas. Sessões fora da lista são encerradas. */
+  keep_session_ids?: string[]
+}
+
+export interface ChangeEmailPayload {
+  new_email: string
+  password: string
+}
+
 export interface LoginResponse {
   user?: UserInfo
   expires_at?: string
@@ -26,6 +38,16 @@ export interface UserInfo {
   username?: string
   email?: string
 }
+
+export interface SessionInfo {
+  id: string
+  device: string
+  ip: string
+  last_seen: string
+  current: boolean
+}
+
+export type SessionsResponse = SessionInfo[]
 
 export type PasswordCheckId = 'minLength' | 'uppercase' | 'lowercase' | 'digit' | 'special' | 'utf8'
 

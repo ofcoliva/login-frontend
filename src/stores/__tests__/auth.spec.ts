@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { AUTH_EXPIRES_AT_KEY, AUTH_SESSION_KEY, AUTH_USER_KEY } from '@/config/api'
+import { API_BASE_URL, AUTH_EXPIRES_AT_KEY, AUTH_SESSION_KEY, AUTH_USER_KEY } from '@/config/api'
 import { useAuthStore } from '@/stores/auth'
 
 function responseFor(status: number, body?: unknown) {
@@ -302,5 +302,105 @@ describe('auth store', () => {
     expect(store.isAuthenticated).toBe(false)
     expect(store.user).toBeNull()
     expect(localStorage.getItem(AUTH_SESSION_KEY)).toBeNull()
+  })
+
+  it('changePassword envia senhas e keep_session_ids via PATCH', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(responseFor(204))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useAuthStore()
+    const ok = await store.changePassword({
+      current_password: 'SenhaAtual123!',
+      new_password: VALID_PASSWORD,
+      keep_session_ids: ['sessao-1'],
+    })
+
+    expect(ok).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${API_BASE_URL}/change_password`)
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(String(init.body))).toEqual({
+      current_password: 'SenhaAtual123!',
+      new_password: VALID_PASSWORD,
+      keep_session_ids: ['sessao-1'],
+    })
+  })
+
+  it('changePassword sem keep_session_ids não envia o campo', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(responseFor(204))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useAuthStore()
+    const ok = await store.changePassword({
+      current_password: 'SenhaAtual123!',
+      new_password: VALID_PASSWORD,
+    })
+
+    expect(ok).toBe(true)
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(String(init.body))).not.toHaveProperty('keep_session_ids')
+  })
+
+  it('changePassword com erro 400 define a mensagem', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(responseFor(400, { detail: 'Senha atual incorreta' })),
+    )
+
+    const store = useAuthStore()
+    const ok = await store.changePassword({
+      current_password: 'errada',
+      new_password: VALID_PASSWORD,
+    })
+
+    expect(ok).toBe(false)
+    expect(store.error).toBe('Senha atual incorreta')
+  })
+
+  it('changeEmail atualiza e persiste o email retornado', async () => {
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString()
+    localStorage.setItem(AUTH_SESSION_KEY, '1')
+    localStorage.setItem(
+      AUTH_USER_KEY,
+      JSON.stringify({ username: 'joao', email: 'joao@email.com' }),
+    )
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        responseFor(200, {
+          user: { username: 'joao', email: 'novo@email.com' },
+          expires_at: expiresAt,
+        }),
+      ),
+    )
+
+    const store = useAuthStore()
+    const ok = await store.changeEmail({ new_email: 'novo@email.com', password: VALID_PASSWORD })
+
+    expect(ok).toBe(true)
+    expect(store.user?.email).toBe('novo@email.com')
+    expect(localStorage.getItem(AUTH_USER_KEY)).toContain('novo@email.com')
+    expect(store.expiresAt).toBe(Date.parse(expiresAt))
+    store.clearSession()
+  })
+
+  it('changeEmail com erro 409 mantém o email atual', async () => {
+    localStorage.setItem(AUTH_SESSION_KEY, '1')
+    localStorage.setItem(
+      AUTH_USER_KEY,
+      JSON.stringify({ username: 'joao', email: 'joao@email.com' }),
+    )
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(responseFor(409, { detail: 'Email já em uso' })),
+    )
+
+    const store = useAuthStore()
+    const ok = await store.changeEmail({ new_email: 'usado@email.com', password: VALID_PASSWORD })
+
+    expect(ok).toBe(false)
+    expect(store.error).toBe('Email já em uso')
+    expect(store.user?.email).toBe('joao@email.com')
   })
 })

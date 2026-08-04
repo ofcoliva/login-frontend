@@ -3,7 +3,13 @@ import { defineStore } from 'pinia'
 import { AUTH_EXPIRES_AT_KEY, AUTH_SESSION_KEY, AUTH_USER_KEY } from '@/config/api'
 import * as authApi from '@/services/authApi'
 import { HttpError } from '@/services/http'
-import type { ForgotPasswordPayload, LoginPayload, RegisterPayload } from '@/types/auth'
+import type {
+  ChangeEmailPayload,
+  ChangePasswordPayload,
+  ForgotPasswordPayload,
+  LoginPayload,
+  RegisterPayload,
+} from '@/types/auth'
 import type { UserInfo } from '@/types/auth'
 
 const MAX_TIMEOUT_MS = 2_147_000_000
@@ -18,6 +24,8 @@ export const useAuthStore = defineStore('auth', () => {
   const registerLoading = ref(false)
   const forgotPasswordLoading = ref(false)
   const logoutLoading = ref(false)
+  const changePasswordLoading = ref(false)
+  const changeEmailLoading = ref(false)
 
   let expiryTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -196,6 +204,43 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function changePassword(payload: ChangePasswordPayload): Promise<boolean> {
+    if (changePasswordLoading.value) return false
+    changePasswordLoading.value = true
+    error.value = null
+    try {
+      await authApi.changePassword(payload)
+      return true
+    } catch (err) {
+      setError(err)
+      return false
+    } finally {
+      changePasswordLoading.value = false
+    }
+  }
+
+  async function changeEmail(payload: ChangeEmailPayload): Promise<boolean> {
+    if (changeEmailLoading.value) return false
+    changeEmailLoading.value = true
+    error.value = null
+    try {
+      const response = await authApi.changeEmail(payload)
+      user.value = { ...user.value, ...(response.user ?? { email: payload.new_email }) }
+      persistUser(user.value)
+      if (response.expires_at !== undefined) {
+        expiresAt.value = parseExpiresAt(response.expires_at)
+        persistExpiresAt(expiresAt.value)
+        scheduleSessionExpiry()
+      }
+      return true
+    } catch (err) {
+      setError(err)
+      return false
+    } finally {
+      changeEmailLoading.value = false
+    }
+  }
+
   async function validateSession(): Promise<boolean> {
     if (!sessionActive.value) return false
     if (sessionExpired()) {
@@ -245,9 +290,13 @@ export const useAuthStore = defineStore('auth', () => {
     registerLoading,
     forgotPasswordLoading,
     logoutLoading,
+    changePasswordLoading,
+    changeEmailLoading,
     login,
     register,
     forgotPassword,
+    changePassword,
+    changeEmail,
     validateSession,
     sessionExpired,
     logout,
