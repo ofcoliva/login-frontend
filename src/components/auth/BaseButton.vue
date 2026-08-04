@@ -2,7 +2,7 @@
 withDefaults(
   defineProps<{
     type?: 'button' | 'submit'
-    variant?: 'primary' | 'secondary' | 'ghost'
+    variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
     loading?: boolean
     disabled?: boolean
     block?: boolean
@@ -87,6 +87,15 @@ withDefaults(
 .base-button--ghost:hover:not(:disabled) {
   color: var(--color-text);
   background-color: var(--color-background-mute);
+}
+
+.base-button--danger {
+  background-color: var(--color-danger);
+  color: #fff;
+}
+
+.base-button--danger:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 
 .base-button--block {
