@@ -2,8 +2,8 @@
 
 // Declarations for Vue SFCs
 declare module '*.vue' {
-  import { DefineComponent } from 'vue'
-  const component: DefineComponent<{}, {}, any>
+  import type { Component } from 'vue'
+  const component: Component
   export default component
 }
 
