@@ -28,5 +28,6 @@ certificatesResolvers:
       email: ${ACME_EMAIL}
       storage: /letsencrypt/acme.json
       caServer: ${ACME_CA_SERVER}
-      httpChallenge:
-        entryPoint: web
+      dnsChallenge:
+        provider: cloudflare
+        delayBeforeCheck: 10

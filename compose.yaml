@@ -1,4 +1,6 @@
-name: login-frontend
+volumes:
+  traefik-acme:
+    name: traefik-acme
 
 services:
   traefik:
@@ -6,15 +8,14 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./deploy/traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
+      - ./deploy/traefik/traefik.generated.yaml:/etc/traefik/traefik.yaml:ro
       - traefik-acme:/letsencrypt
     ports:
-      - "80:80"
+      - "${PORT:-9001}:443"
       - "443:443"
       - "127.0.0.1:8080:8080"
     environment:
-      ACME_EMAIL: ${ACME_EMAIL:-admin@exemplo.com}
-      ACME_CA_SERVER: ${ACME_CA_SERVER:-https://acme-staging-v02.api.letsencrypt.org/directory}
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:-}
     networks:
       - edge
     healthcheck:
@@ -36,15 +37,13 @@ services:
     user: "101:101"
     read_only: true
     tmpfs:
-      - /var/cache/nginx
-      - /var/run
       - /tmp
     deploy:
       replicas: 2
     networks:
       - edge
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -54,16 +53,30 @@ services:
       com.centurylinklabs.watchtower.enable: "true"
       traefik.enable: "true"
       traefik.http.routers.frontend.rule: "Host(`${DOMAIN:-localhost}`)"
-      traefik.http.routers.frontend.entrypoints: web
+      traefik.http.routers.frontend.entrypoints: websecure
       traefik.http.routers.frontend.service: frontend
+      traefik.http.routers.frontend.tls.certresolver: letsencrypt
       traefik.http.routers.frontend.middlewares: frontend-ratelimit,frontend-secureheaders
+      traefik.http.routers.frontend-http.rule: "Host(`${DOMAIN:-localhost}`)"
+      traefik.http.routers.frontend-http.entrypoints: web
+      traefik.http.routers.frontend-http.middlewares: redirect-to-https
+      traefik.http.routers.frontend-local.rule: "Host(`localhost`) || Host(`127.0.0.1`)"
+      traefik.http.routers.frontend-local.entrypoints: web
+      traefik.http.routers.frontend-local.service: frontend
+      traefik.http.routers.frontend-local.middlewares: frontend-ratelimit,frontend-secureheaders
+      traefik.http.routers.frontend-local-secure.rule: "Host(`localhost`) || Host(`127.0.0.1`)"
+      traefik.http.routers.frontend-local-secure.entrypoints: websecure
+      traefik.http.routers.frontend-local-secure.service: frontend
+      traefik.http.routers.frontend-local-secure.tls.certresolver: none
+      traefik.http.routers.frontend-local-secure.middlewares: frontend-ratelimit,frontend-secureheaders
       traefik.http.services.frontend.loadbalancer.server.port: "8080"
       traefik.http.middlewares.frontend-ratelimit.rateLimit.average: "100"
       traefik.http.middlewares.frontend-ratelimit.rateLimit.burst: "50"
       traefik.http.middlewares.frontend-secureheaders.headers.frameDeny: "true"
+      traefik.http.middlewares.redirect-to-https.redirectscheme.scheme: https
 
   autoheal:
-    image: willfarrell/autoheal
+    image: willfarrell/autoheal:latest
     restart: unless-stopped
     environment:
       - AUTOHEAL_INTERVAL=5
@@ -75,12 +88,13 @@ services:
       - edge
 
   watchtower:
-    image: containrrr/watchtower
+    image: containrrr/watchtower:latest
     restart: unless-stopped
     environment:
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_SCHEDULE: "0 3 * * *"
+      DOCKER_API_VERSION: 1.44
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
@@ -107,6 +121,4 @@ networks:
   internal:
     name: login-frontend-internal
 
-volumes:
-  traefik-acme:
-  # postgres-data:
+
