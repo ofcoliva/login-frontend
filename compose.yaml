@@ -2,7 +2,7 @@ name: login-frontend
 
 services:
   traefik:
-    image: traefik:v3.4
+    image: traefik:v3.6
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -100,47 +100,6 @@ services:
       start_period: 5s
     labels:
       autoheal: "true"
-
-  # -------- Próxima fase: backend + banco --------
-  # backend:
-  #   build:
-  #     context: ../login-backend
-  #   restart: unless-stopped
-  #   environment:
-  #     DATABASE_URL: postgresql+asyncpg://app:${POSTGRES_PASSWORD}@postgres:5432/login
-  #     COOKIE_SECURE: ${COOKIE_SECURE:-true}
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   networks:
-  #     - edge
-  #     - internal
-  #   labels:
-  #     autoheal: "true"
-  #     traefik.enable: "true"
-  #     traefik.http.routers.backend.rule: "Host(`${DOMAIN:-localhost}`) && PathPrefix(`/api/v1`)"
-  #     traefik.http.routers.backend.entrypoints: web
-  #     traefik.http.routers.backend.middlewares: frontend-ratelimit,frontend-secureheaders
-  #     traefik.http.services.backend.loadbalancer.server.port: "8000"
-
-  # postgres:
-  #   image: postgres:18
-  #   restart: unless-stopped
-  #   environment:
-  #     POSTGRES_USER: app
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
-  #     POSTGRES_DB: login
-  #   volumes:
-  #     - postgres-data:/var/lib/postgresql/data
-  #   networks:
-  #     - internal
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U app -d login"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   labels:
-  #     autoheal: "true"
 
 networks:
   edge:

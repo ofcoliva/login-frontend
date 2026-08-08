@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---------- Build stage ----------
-FROM oven/bun:1-alpine AS build
+FROM oven/bun:1.3-alpine AS build
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ COPY . .
 RUN VITE_API_BASE_URL=${VITE_API_BASE_URL} bun run build
 
 # ---------- Runtime stage ----------
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:stable-alpine AS runtime
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
