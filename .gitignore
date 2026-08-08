@@ -44,5 +44,8 @@ __screenshots__/
 # Vite
 *.timestamp-*-*.mjs
 
+# Traefik (gerado pelo deploy.sh a partir de deploy/traefik/traefik.yaml)
+deploy/traefik/traefik.generated.yaml
+
 test-results/
 playwright-report/
