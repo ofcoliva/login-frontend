@@ -13,7 +13,6 @@ coverage
 # Env e segredos
 .env
 .env.*
-!.env.example
 
 # Testes e logs
 e2e

@@ -14,11 +14,10 @@ dist-ssr
 coverage
 *.local
 
-# Env (configurações locais; use .env.example como referência)
+# Env (configurações locais; use example.env como referência)
 .env
 .env.*
-!.env.example
-!.env.docker.example
+!example.env
 
 # Editor directories and files
 .vscode/*

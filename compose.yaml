@@ -11,7 +11,7 @@ services:
       - ./deploy/traefik/traefik.generated.yaml:/etc/traefik/traefik.yaml:ro
       - traefik-acme:/letsencrypt
     ports:
-      - "${PORT:-9001}:443"
+      - "${PORT:-80}:443"
       - "443:443"
       - "127.0.0.1:8080:8080"
     environment:

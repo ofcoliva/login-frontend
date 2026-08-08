@@ -22,7 +22,7 @@ Opções:
   -h, --help           Mostra esta ajuda
 
 O .env (DOMAIN, ACME_EMAIL, ACME_CA_SERVER, DOCKER_IMAGE_OWNER, VITE_API_BASE_URL) é
-criado a partir de .env.docker.example se não existir.
+criado a partir de example.env se não existir.
 EOF
 }
 
@@ -49,8 +49,8 @@ fi
 if [[ -f "$ENV_FILE" ]]; then
   echo "Usando $ENV_FILE existente."
 else
-  cp .env.docker.example "$ENV_FILE"
-  echo "Criado $ENV_FILE a partir de .env.docker.example."
+  cp example.env "$ENV_FILE"
+  echo "Criado $ENV_FILE a partir de example.env."
   echo "AVISO: edite $ENV_FILE (DOMAIN, ACME_EMAIL, ACME_CA_SERVER, ...) antes de prosseguir."
   exit 1
 fi
