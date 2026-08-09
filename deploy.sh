@@ -8,6 +8,7 @@ PROJECT_NAME="login-frontend"
 ENV_FILE=".env"
 BUILD=true
 OBSERVABILITY=false
+TUNNEL=false
 HEALTH_TIMEOUT=120
 
 usage() {
@@ -18,6 +19,7 @@ Sobe o stack do compose.yaml (traefik + frontend + autoheal + watchtower + redis
 
 Opções:
   -o, --observability  Inclui compose.observability.yaml (prometheus, grafana, node-exporter)
+  -t, --tunnel         Inclui compose.cloudflared.yaml (Cloudflare Tunnel à frente do traefik)
       --no-build       Não reconstrói o frontend; usa a imagem existente/GHCR
   -h, --help           Mostra esta ajuda
 
@@ -29,6 +31,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o | --observability) OBSERVABILITY=true ;;
+    -t | --tunnel) TUNNEL=true ;;
     --no-build) BUILD=false ;;
     -h | --help) usage; exit 0 ;;
     *) echo "opção desconhecida: $1" >&2; usage; exit 1 ;;
@@ -74,12 +77,24 @@ if [[ "$ACME_CA_SERVER" != "https://acme-v02.api.letsencrypt.org/directory" ]]; 
   echo "AVISO: ACME_CA_SERVER usa o ambiente STAGING; troque para a URL oficial em produção."
 fi
 
+COMPOSE_FILES=(-f compose.yaml)
+if $OBSERVABILITY; then
+  COMPOSE_FILES+=(-f compose.observability.yaml)
+fi
+if $TUNNEL; then
+  if [[ -z "${CF_TUNNEL_TOKEN:-}" ]]; then
+    echo "ERRO: --tunnel requer CF_TUNNEL_TOKEN no $ENV_FILE (token do Cloudflare Tunnel)." >&2
+    exit 1
+  fi
+  COMPOSE_FILES+=(-f compose.cloudflared.yaml)
+fi
+
 echo "==> pull de imagens"
-docker compose pull
+docker compose "${COMPOSE_FILES[@]}" pull
 
 if $BUILD; then
   echo "==> build do frontend (VITE_API_BASE_URL=$VITE_API_BASE_URL)"
-  docker compose build
+  docker compose "${COMPOSE_FILES[@]}" build
 else
   echo "==> --no-build: usando imagem existente"
 fi
@@ -90,11 +105,6 @@ envsubst < deploy/traefik/traefik.yaml > deploy/traefik/traefik.generated.yaml
 if grep -q '\${ACME' deploy/traefik/traefik.generated.yaml; then
   echo "ERRO: placeholder \${ACME_* não resolvido no traefik.generated.yaml." >&2
   exit 1
-fi
-
-COMPOSE_FILES=(-f compose.yaml)
-if $OBSERVABILITY; then
-  COMPOSE_FILES+=(-f compose.observability.yaml)
 fi
 
 echo "==> up -d"
@@ -125,16 +135,40 @@ else
   exit 1
 fi
 
+if $TUNNEL; then
+  echo "==> aguardando registro do Cloudflare Tunnel (até 60s)..."
+  cf_ok=""
+  deadline=$((SECONDS + 60))
+  while [[ $SECONDS -lt $deadline ]]; do
+    if docker compose "${COMPOSE_FILES[@]}" logs --tail=300 cloudflared 2>/dev/null | grep -q "Registered tunnel connection"; then
+      cf_ok=1
+      break
+    fi
+    sleep 3
+  done
+  if [[ -n "$cf_ok" ]]; then
+    echo "==> Cloudflare Tunnel registrado"
+  else
+    echo "AVISO: não detectei 'Registered tunnel connection' no cloudflared." >&2
+    echo "AVISO: confira CF_TUNNEL_TOKEN no $ENV_FILE e o hostname no dashboard (Zero Trust → Tunnels)." >&2
+  fi
+fi
+
 echo
 echo "==> stack em execução:"
 docker compose "${COMPOSE_FILES[@]}" ps
 echo
-if [[ "$PORT" == "443" ]]; then
+if $TUNNEL; then
   PUBLIC_URL="https://$DOMAIN"
+  echo "URL pública: $PUBLIC_URL (via Cloudflare Tunnel; TLS terminado na edge Cloudflare)"
 else
-  PUBLIC_URL="https://$DOMAIN:$PORT"
+  if [[ "$PORT" == "443" ]]; then
+    PUBLIC_URL="https://$DOMAIN"
+  else
+    PUBLIC_URL="https://$DOMAIN:$PORT"
+  fi
+  echo "URL pública: $PUBLIC_URL (cert Let's Encrypt via DNS-01)"
 fi
-echo "URL pública: $PUBLIC_URL (cert Let's Encrypt via DNS-01)"
 if [[ "$ACME_CA_SERVER" != "https://acme-v02.api.letsencrypt.org/directory" ]]; then
   echo "(HTTPS com certificado real exige ACME_CA_SERVER oficial em produção)"
 fi
