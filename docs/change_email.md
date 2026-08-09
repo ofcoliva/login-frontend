@@ -70,7 +70,7 @@ Todos os erros são JSON `{"detail": "..."}` — o frontend exibe `detail` como 
 - Operar sempre sobre o usuário do JWT autenticado (nunca por campo do corpo).
 - Verificar a senha com Argon2id (comparação segura). **Nunca** logar ou retornar a senha.
 - Em `401` nesta rota, o frontend dispara `auth:unauthorized` → limpa a sessão e redireciona para `/login`.
-- Recomendado: aplicar rate limit (já há Redis na stack) para mitigar tentativas de senha.
+- Rate limit já é aplicado pelo nginx do backend (`limit_req`, `429` com `Retry-After`) para mitigar tentativas de senha.
 - A sessão atual **permanece ativa** (o frontend não espera logout após troca de email). Se quiser invalidar outras sessões, revogue os `sid` diferentes do atual na tabela `sessions`.
 
 ## Fluxo opcional: verificação de email novo
