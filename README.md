@@ -184,3 +184,69 @@ server {
 | `bun test:e2e` | Testes e2e (Playwright) |
 | `bun run lint` | oxlint + eslint |
 | `bun run format` | oxfmt sobre `src/` |
+
+## Deploy (Docker / HTTPS)
+
+Stack no Docker Compose: **traefik** (HTTPS + ACME) → **frontend** (nginx não-root, read-only) + autoheal + watchtower + redis.
+
+Arquivos de deploy:
+- `compose.yaml` — stack base
+- `compose.observability.yaml` — prometheus, grafana, node-exporter (flag `--observability`)
+- `compose.cloudflared.yaml` — Cloudflare Tunnel à frente do traefik (flag `--tunnel`)
+- `deploy/traefik/traefik.yaml` — config estática do traefik (template)
+- `deploy/traefik/traefik.generated.yaml` — renderizado por `envsubst` (gitignored)
+
+### Configuração (.env)
+
+`deploy.sh` cria `.env` a partir de `example.env` se não existir. Variáveis:
+
+| Variável | Padrão | Descrição |
+| --- | --- | --- |
+| `DOMAIN` | `localhost` | Domínio público servido pelo traefik |
+| `PORT` | `80` | Porta pública do traefik (ex.: `30033`) |
+| `ACME_EMAIL` | `admin@exemplo.com` | E-mail do certificado Let's Encrypt |
+| `ACME_CA_SERVER` | staging | URL ACME; produção usa `https://acme-v02.api.letsencrypt.org/directory` |
+| `CF_DNS_API_TOKEN` | — | Token Cloudflare (Zone.DNS:Edit) para o desafio DNS-01 |
+| `CF_TUNNEL_TOKEN` | — | Token do Cloudflare Tunnel (modo `--tunnel`) |
+| `VITE_API_BASE_URL` | `/api/v1` | Base da API embutida no build do frontend |
+| `DOCKER_IMAGE_OWNER` | `ofcoliva` | Owner da imagem no GHCR |
+| `GRAFANA_ADMIN_USER`/`GRAFANA_ADMIN_PASSWORD` | `admin` | Credenciais iniciais do Grafana |
+
+### Uso
+
+```sh
+./deploy.sh                    # build + up (cert Let's Encrypt via DNS-01)
+./deploy.sh --no-build         # usa a imagem existente/GHCR
+./deploy.sh --observability    # + prometheus/grafana/node-exporter
+./deploy.cloudflared.sh        # + Cloudflare Tunnel (requer CF_TUNNEL_TOKEN)
+```
+
+O traefik usa **config estática renderizada por `envsubst`** (`traefik.generated.yaml`): quando um arquivo estático existe, flags/env do CLI são ignoradas, e env vars não são interpoladas dentro do YAML. O certificado é obtido por **DNS-01 via Cloudflare** e persistido no volume `traefik-acme` (`acme.json`).
+
+Existem **dois modos de exposição pública**:
+
+- **Modo direto** (`./deploy.sh`): o traefik publica a porta `PORT` do host e o registro A do `DOMAIN` aponta para o IP público da máquina, com port-forward no roteador.
+- **Modo tunnel** (`./deploy.cloudflared.sh`): o `cloudflared` abre um túnel de saída para a edge da Cloudflare — nenhuma porta precisa ser aberta (ideal para IP dinâmico, CGNAT ou firewall que bloqueia portas).
+
+### Exposição direta (port-forward)
+
+1. No DNS do domínio, crie um registro **A** de `DOMAIN` apontando para o IP público da máquina (modo DNS-only/cinza, sem proxy da Cloudflare).
+2. No roteador, faça **port-forward** TCP da porta `PORT` externa → `PORT` interna na máquina.
+3. No `.env`, defina `PORT` (ex.: `30033`), `DOMAIN` e `ACME_CA_SERVER` de produção.
+4. Rode `./deploy.sh` e acesse `https://DOMAIN:PORT`.
+
+O desafio ACME usa **DNS-01** via API da Cloudflare (`CF_DNS_API_TOKEN`), então não é preciso liberar as portas 80/443 na internet.
+
+### Cloudflare Tunnel
+
+O container `cloudflared` conecta-se ao traefik via `https://traefik:443`. O TLS do browser é terminado na edge do Cloudflare; o cert Let's Encrypt continua valendo no trecho edge→origin.
+
+1. Cloudflare Zero Trust → Networks → Tunnels → crie um túnel e copie o token
+2. Preencha `CF_TUNNEL_TOKEN` no `.env`
+3. Adicione o Public Hostname `DOMAIN` → Service `https://traefik:443`
+4. No Public Hostname, em **Additional application settings → TLS**, defina **Origin Server Name** = `DOMAIN` (ou ative **Match SNI to Host**)
+5. Rode `./deploy.cloudflared.sh`
+
+Sem o `Origin Server Name` o cloudflared verifica o certificado do origin contra o nome do serviço (`traefik`); o traefik, para esse SNI, responde com o certificado padrão auto-gerado e o túnel falha com `tls: failed to verify certificate ... not traefik`. Com o ajuste, o traefik serve o cert Let's Encrypt de `DOMAIN`. (Alternativa: **No TLS Verify** = on, mas aí o trecho edge→origin deixa de validar o certificado.)
+
+Nesse modo o registro A antigo do domínio é substituído pelo CNAME do túnel (gerado automaticamente) e o port-forward no roteador deixa de ser necessário. Os dois modos podem conviver — o modo direto continua acessível pela porta `PORT` mesmo com o túnel ativo.
