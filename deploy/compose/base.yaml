@@ -1,0 +1,64 @@
+# deploy/compose/base.yaml
+# Infra compartilhada do stack: traefik (TLS/ACME), autoheal, watchtower.
+# Os caminhos relativos são resolvidos contra o project-directory (raiz do repositório),
+# aplicado pelo deploy/scripts/deploy.sh via --project-directory.
+name: login-frontend
+
+volumes:
+  traefik-acme:
+    name: traefik-acme
+
+services:
+  traefik:
+    image: traefik:v3.6
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./deploy/traefik/traefik.generated.yaml:/etc/traefik/traefik.yaml:ro
+      - ./deploy/traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik-acme:/letsencrypt
+    ports:
+      - "${PORT:-80}:443"
+      - "443:443"
+      - "127.0.0.1:8080:8080"
+    environment:
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:-}
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      autoheal: "true"
+
+  autoheal:
+    image: willfarrell/autoheal:latest
+    restart: unless-stopped
+    environment:
+      - AUTOHEAL_INTERVAL=5
+      - AUTOHEAL_START_PERIOD=300
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - edge
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    restart: unless-stopped
+    environment:
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_SCHEDULE: "0 3 * * *"
+      DOCKER_API_VERSION: 1.44
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - edge
+
+networks:
+  edge:
+    name: login-frontend-edge

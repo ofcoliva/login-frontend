@@ -1,0 +1,87 @@
+# deploy/traefik/dynamic/frontend.yaml
+# Roteamento dinâmico do frontend (file provider do traefik).
+# Este arquivo é REGENERADO pelo deploy/scripts/deploy.sh a cada operação:
+#   - DOMAIN vem do .env
+#   - weights blue/green são a fonte de verdade do switch (100/0 ou 0/100)
+# A versão commitada aqui é apenas o seed inicial (DOMAIN=localhost, blue=100)
+# para permitir um "docker compose up" direto sem passar pelo deploy.sh.
+#
+# O traefik monitora este diretório (providers.file.directory + watch) e
+# recarrega automaticamente ao trocar os weights — é isso que torna o
+# cutover/rollback atômico e sem downtime.
+http:
+  routers:
+    frontend:
+      rule: "Host(`localhost`)"
+      entryPoints:
+        - websecure
+      service: frontend-wrr
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - frontend-ratelimit
+        - frontend-secureheaders
+
+    frontend-http:
+      rule: "Host(`localhost`)"
+      entryPoints:
+        - web
+      service: frontend-wrr
+      middlewares:
+        - redirect-to-https
+
+    frontend-local:
+      rule: "Host(`localhost`) || Host(`127.0.0.1`)"
+      entryPoints:
+        - web
+      service: frontend-wrr
+      middlewares:
+        - frontend-ratelimit
+        - frontend-secureheaders
+
+    frontend-local-secure:
+      rule: "Host(`localhost`) || Host(`127.0.0.1`)"
+      entryPoints:
+        - websecure
+      service: frontend-wrr
+      tls: {}
+      middlewares:
+        - frontend-ratelimit
+        - frontend-secureheaders
+
+  services:
+    frontend-wrr:
+      weighted:
+        services:
+          - name: frontend-blue
+            weight: 100
+          - name: frontend-green
+            weight: 0
+
+    frontend-blue:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://frontend-blue:8080"
+
+    frontend-green:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://frontend-green:8080"
+
+  middlewares:
+    frontend-ratelimit:
+      rateLimit:
+        average: 100
+        burst: 50
+    frontend-secureheaders:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: strict-origin-when-cross-origin
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true

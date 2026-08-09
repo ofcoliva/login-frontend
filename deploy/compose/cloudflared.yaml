@@ -1,3 +1,6 @@
+# deploy/compose/cloudflared.yaml
+# Cloudflare Tunnel à frente do traefik (flag --tunnel).
+# Overlay de deploy/compose/base.yaml.
 services:
   cloudflared:
     image: cloudflare/cloudflared:latest

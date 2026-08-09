@@ -1,0 +1,52 @@
+# deploy/compose/frontend.yaml
+# Slots blue/green do frontend (nginx non-root, read-only, 1 réplica por slot).
+# A imagem é construída/gerenciada pelo deploy/scripts/deploy.sh e passada via
+# FRONTEND_IMAGE (tag única por deploy, ex.: ghcr.io/<owner>/login-frontend:<sha>).
+# As rotas e weights são controladas por deploy/traefik/dynamic/frontend.yaml.
+#
+# Watchtower fica desabilitado nos slots: a atualização é feita exclusivamente
+# pelo deploy.sh (blue/green), para não quebrar o controle de versão.
+services:
+  frontend-blue:
+    image: ${FRONTEND_IMAGE:-ghcr.io/${DOCKER_IMAGE_OWNER:-ofcoliva}/login-frontend:dev}
+    container_name: login-frontend-blue
+    restart: unless-stopped
+    user: "101:101"
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      autoheal: "true"
+      com.centurylinklabs.watchtower.enable: "false"
+
+  frontend-green:
+    image: ${FRONTEND_IMAGE:-ghcr.io/${DOCKER_IMAGE_OWNER:-ofcoliva}/login-frontend:dev}
+    container_name: login-frontend-green
+    restart: unless-stopped
+    user: "101:101"
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      autoheal: "true"
+      com.centurylinklabs.watchtower.enable: "false"
+
+networks:
+  edge:
+    name: login-frontend-edge

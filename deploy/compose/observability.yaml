@@ -1,3 +1,6 @@
+# deploy/compose/observability.yaml
+# Observabilidade: prometheus, grafana e node-exporter (flag --observability).
+# Overlay de deploy/compose/base.yaml.
 services:
   prometheus:
     image: prom/prometheus:v2.53.0

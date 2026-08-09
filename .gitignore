@@ -46,5 +46,8 @@ __screenshots__/
 # Traefik (gerado pelo deploy.sh a partir de deploy/traefik/traefik.yaml)
 deploy/traefik/traefik.generated.yaml
 
+# Estado blue/green (gerado pelo deploy.sh)
+deploy/.bluegreen
+
 test-results/
 playwright-report/

@@ -16,7 +16,7 @@ Autenticação por **cookie httpOnly** (SameSite=Lax) definido pelo backend — 
 
 ### Visão geral do sistema
 
-A aplicação é um SPA Vue 3 servido por nginx (container não-root, read-only) com 2 réplicas, atrás do **traefik** (TLS + ACME DNS-01 via Cloudflare). O frontend e o backend **FastAPI** compartilham o mesmo origin público (`/api/v1`), então o cookie httpOnly flui sem CORS. A máquina tem duas maneiras de expor o serviço: **modo direto** (port-forward no roteador) ou **Cloudflare Tunnel** (conexão de saída do `cloudflared`, sem abrir portas).
+A aplicação é um SPA Vue 3 servido por nginx (container não-root, read-only) em **dois slots blue/green**, atrás do **traefik** (TLS + ACME DNS-01 via Cloudflare, com switch de tráfego por weights sem downtime). O frontend e o backend **FastAPI** compartilham o mesmo origin público (`/api/v1`), então o cookie httpOnly flui sem CORS. A máquina tem duas maneiras de expor o serviço: **modo direto** (port-forward no roteador) ou **Cloudflare Tunnel** (conexão de saída do `cloudflared`, sem abrir portas).
 
 ```mermaid
 flowchart TB
@@ -32,14 +32,13 @@ flowchart TB
     subgraph HOST["Máquina (Docker Compose)"]
         direction TB
         subgraph INGRESS["Ingress — rede edge"]
-            TRAEFIK["Traefik v3<br/>web (:80) + websecure (:443)<br/>ACME DNS-01 · Docker provider · metrics"]
+            TRAEFIK["Traefik v3<br/>web (:80) + websecure (:443)<br/>ACME DNS-01 · file provider (rotas + WRR)<br/>weights blue/green em deploy/traefik/dynamic"]
             CFT["cloudflared — túnel de saída<br/>(só no modo --tunnel)"]
         end
-        subgraph APP["Aplicação — rede edge"]
-            FE1["frontend réplica 1 — nginx non-root · read-only (dist/)"]
-            FE2["frontend réplica 2 — nginx non-root · read-only (dist/)"]
+        subgraph APP["Aplicação — rede edge (slots blue/green)"]
+            B["frontend-blue — nginx non-root · read-only (dist/)"]
+            G["frontend-green — nginx non-root · read-only (dist/)"]
         end
-        REDIS["Redis 7 — rede internal"]
         OPS["autoheal · watchtower"]
         OBS["Prometheus · Grafana · node-exporter<br/>(--observability, rede edge)"]
     end
@@ -50,11 +49,10 @@ flowchart TB
     U -->|"tunnel: https://DOMAIN"| EDGE
     EDGE -->|CNAME do túnel| CFT
     CFT -->|"https://traefik:443"| TRAEFIK
-    TRAEFIK -->|"Host(DOMAIN) · TLS"| FE1
-    TRAEFIK -->|"Host(DOMAIN) · TLS"| FE2
+    TRAEFIK -->|"WRR 100/0 (switch de weights = cutover/rollback)"| B
+    TRAEFIK -->|"WRR 100/0 (switch de weights = cutover/rollback)"| G
     TRAEFIK -->|DNS-01| LE
-    FE1 & FE2 -->|"/api/v1 (mesmo origin)"| API
-    API -.->|sessões/rate-limit| REDIS
+    B & G -->|"/api/v1 (mesmo origin)"| API
     OBS -.->|"scrape traefik:8080 · node-exporter:9100"| TRAEFIK
 ```
 
@@ -66,9 +64,9 @@ O traefik publica a porta `PORT` do host; o registro **A** do `DOMAIN` aponta pa
 flowchart LR
     U([Browser]) -->|"https://DOMAIN:PORT"| D["Cloudflare DNS<br/>registro A: DOMAIN → IP público<br/>(DNS-only, sem proxy)"]
     D --> RT["Router<br/>port-forward externo PORT → máquina:PORT"]
-    RT -->|"TCP :PORT"| TR["Traefik — publica PORT:443<br/>TLS · cert Let's Encrypt"]
+    RT -->|"TCP :PORT"| TR["Traefik — publica PORT:443<br/>TLS · cert Let's Encrypt · WRR blue/green"]
     TR -->|"desafio DNS-01"| LE["Let's Encrypt<br/>CF_DNS_API_TOKEN — portas 80/443 fechadas"]
-    TR --> FE["frontend nginx (replicas=2)"]
+    TR --> FE["frontend nginx (slot blue ou green ativo)"]
     FE --> API["FastAPI /api/v1 · cookie httpOnly"]
 ```
 
@@ -82,7 +80,7 @@ flowchart LR
     E -->|"CNAME do túnel (automático)"| C["cloudflared<br/>conexão de saída — sem port-forward"]
     C -->|"https://traefik:443<br/>Origin Server Name = DOMAIN"| TR["Traefik<br/>cert Let's Encrypt de DOMAIN no trecho edge→origin"]
     TR -->|DNS-01| LE["Let's Encrypt"]
-    TR --> FE["frontend nginx (replicas=2)"]
+    TR --> FE["frontend nginx (slot blue ou green ativo)"]
     FE --> API["FastAPI /api/v1 · cookie httpOnly"]
 ```
 
@@ -263,14 +261,82 @@ server {
 
 ## Deploy (Docker / HTTPS)
 
-Stack no Docker Compose: **traefik** (HTTPS + ACME) → **frontend** (nginx não-root, read-only) + autoheal + watchtower + redis.
+Stack no Docker Compose: **traefik** (HTTPS + ACME) → **frontend** (nginx não-root, read-only, **slots blue/green**) + autoheal + watchtower.
 
-Arquivos de deploy:
-- `compose.yaml` — stack base
-- `compose.observability.yaml` — prometheus, grafana, node-exporter (flag `--observability`)
-- `compose.cloudflared.yaml` — Cloudflare Tunnel à frente do traefik (flag `--tunnel`)
-- `deploy/traefik/traefik.yaml` — config estática do traefik (template)
-- `deploy/traefik/traefik.generated.yaml` — renderizado por `envsubst` (gitignored)
+O deploy é **blue-green**: o frontend roda em 2 slots (`frontend-blue` e `frontend-green`), e o traefik decide quem recebe o tráfego por **weights** (100/0) num arquivo de config dinâmica. Atualizar a versão = subir o novo build no slot **inativo**, trocar os weights (recarga automática do traefik, zero downtime) e manter o slot antigo **idle** para rollback instantâneo.
+
+### Arquitetura do blue-green
+
+- **`deploy/compose/base.yaml`** — infra: traefik, autoheal, watchtower (+ networks/volumes).
+- **`deploy/compose/frontend.yaml`** — slots `frontend-blue`/`frontend-green` (1 réplica cada; imagem vem de `FRONTEND_IMAGE`, tag única por deploy).
+- **`deploy/compose/observability.yaml`** — prometheus, grafana, node-exporter (flag `--observability`).
+- **`deploy/compose/cloudflared.yaml`** — Cloudflare Tunnel (flag `--tunnel`).
+- **`deploy/traefik/traefik.yaml`** — config estática do traefik (template; renderizada por `envsubst` → `traefik.generated.yaml`, gitignored).
+- **`deploy/traefik/dynamic/frontend.yaml`** — routers + middlewares + **service weighted (WRR)** do traefik. Os **weights são a fonte de verdade do cutover/rollback**; o arquivo é regenerado pelo `deploy.sh` e recarregado automaticamente (file provider + `watch`).
+- **`deploy/.bluegreen`** — estado dos slots (ativo + tag de imagem registrada de cada slot); gitignored.
+- **`deploy/scripts/deploy.sh`** — orquestrador; `deploy/scripts/deploy.cloudflared.sh` — atalho `--tunnel`.
+- **`deploy.sh` / `deploy.cloudflared.sh`** (raiz) — wrappers finos para os scripts.
+
+Fluxo do `deploy`:
+
+1. Lê o slot ativo em `deploy/.bluegreen` → **target = slot inativo**.
+2. Constrói (ou puxa, com `--no-build`) a imagem `ghcr.io/<owner>/login-frontend:<short-sha>`.
+3. Sobe a infra e o slot target; aguarda healthcheck (`/healthz`) ficar `healthy`.
+4. **Switch**: reescreve `deploy/traefik/dynamic/frontend.yaml` com `target=100`, `outro=0` — o traefik recarrega sozinho (sem restart), cutover atômico.
+5. Verifica `healthz` via traefik (HTTP 200) e grava o novo estado.
+6. O slot antigo fica **idle** para rollback instantâneo; `prune` remove quando quiser.
+
+#### Diagrama do deploy
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as deploy.sh
+    participant D as Docker Compose
+    participant T as Traefik (file provider)
+    participant B as frontend-blue
+    participant G as frontend-green
+    participant U as Browser
+
+    Note over S: lê deploy/.bluegreen<br/>(ativo=blue → target=green)
+    S->>D: build/pull ghcr.io/<owner>/login-frontend:<short-sha>
+    D-->>S: imagem pronta
+    S->>D: compose up -d frontend-green
+    D->>G: cria container (nginx non-root, read-only)
+    G-->>D: healthz → healthy
+    D-->>S: slot green healthy
+    S->>T: reescreve deploy/traefik/dynamic/frontend.yaml<br/>(green=100, blue=0)
+    T-->>T: recarrega weights (file provider + watch, sem restart)
+    U->>T: request HTTPS (Host: DOMAIN)
+    T->>G: WRR 100/0 → frontend-green
+    G-->>U: 200 (cookie httpOnly /api/v1)
+    Note over S: grava .bluegreen (ativo=green)<br/>blue fica idle para rollback
+```
+
+#### Diagrama do rollback
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as deploy.sh
+    participant D as Docker Compose
+    participant T as Traefik (file provider)
+    participant B as frontend-blue
+    participant G as frontend-green
+    participant U as Browser
+
+    Note over S: lê deploy/.bluegreen<br/>(ativo=green → standby=blue)
+    S->>D: compose up -d frontend-blue<br/>(re-sobe com a imagem gravada <sha-antiga>)
+    D->>B: (re)sobe container do slot blue
+    B-->>D: healthz → healthy
+    D-->>S: slot blue healthy
+    S->>T: reescreve deploy/traefik/dynamic/frontend.yaml<br/>(blue=100, green=0)
+    T-->>T: recarrega weights (sem restart)
+    U->>T: request HTTPS (Host: DOMAIN)
+    T->>B: WRR 100/0 → frontend-blue
+    B-->>U: 200 (versão anterior)
+    Note over S: grava .bluegreen (ativo=blue)<br/>green volta a ficar idle
+```
 
 ### Configuração (.env)
 
@@ -291,13 +357,30 @@ Arquivos de deploy:
 ### Uso
 
 ```sh
-./deploy.sh                    # build + up (cert Let's Encrypt via DNS-01)
-./deploy.sh --no-build         # usa a imagem existente/GHCR
+./deploy.sh                    # deploy blue/green com build local
+./deploy.sh --no-build         # usa a imagem já publicada (tag <short-sha> no GHCR)
 ./deploy.sh --observability    # + prometheus/grafana/node-exporter
-./deploy.cloudflared.sh        # + Cloudflare Tunnel (requer CF_TUNNEL_TOKEN)
+./deploy.sh --tunnel           # + Cloudflare Tunnel (requer CF_TUNNEL_TOKEN)
+./deploy.cloudflared.sh        # atalho para --tunnel
+./deploy.sh status             # slots, imagens, health e weights atuais
+./deploy.sh rollback           # volta o tráfego para o slot anterior (versão anterior)
+./deploy.sh switch blue        # troca os weights manualmente para um slot
+./deploy.sh prune green        # remove o container do slot inativo
+./deploy.sh down               # derruba todo o stack
 ```
 
-O traefik usa **config estática renderizada por `envsubst`** (`traefik.generated.yaml`): quando um arquivo estático existe, flags/env do CLI são ignoradas, e env vars não são interpoladas dentro do YAML. O certificado é obtido por **DNS-01 via Cloudflare** e persistido no volume `traefik-acme` (`acme.json`).
+### Blue-green em detalhe
+
+- **`deploy.sh deploy`**: primeiro deploy sobe o slot `blue`; deploys seguintes alternam `blue`→`green`→`blue`… O slot que recebia o tráfego antes fica **idle** (container parado, imagem preservada).
+- **`deploy.sh rollback`**: re-sobe o slot standby usando a **tag de imagem registrada** em `deploy/.bluegreen` e inverte os weights — rollback da versão anterior sem rebuild.
+- **`deploy.sh switch <blue|green>`**: cutover manual (ex.: canary — basta editar os weights para ex.: 95/5 no próprio `frontend.yaml` dinâmico).
+- **`deploy.sh prune <blue|green>`**: remove o container do slot **inativo**. A tag de imagem continua registrada, então `rollback` ainda consegue redeploy dela. Não pode podar o slot ativo.
+- **`deploy.sh down`**: `docker compose down` em tudo (o volume `traefik-acme` com o `acme.json` é preservado).
+- **Watchtower** fica **desabilitado nos slots** (`com.centurylinklabs.watchtower.enable: "false"`): a atualização do frontend passa a ser exclusiva do `deploy.sh`. O watchtower continua atualizando traefik/autoheal etc.
+
+A tag da imagem é o **short SHA do git** (`git rev-parse --short HEAD`); o CI também publica a tag imutável `<sha>` no GHCR além de `dev`/`main`/`latest`. Isso garante que a imagem da versão anterior continue disponível para `rollback`/`--no-build`.
+
+O traefik usa **config estática renderizada por `envsubst`** (`traefik.generated.yaml`): quando um arquivo estático existe, flags/env do CLI são ignoradas, e env vars não são interpoladas dentro do YAML. O certificado é obtido por **DNS-01 via Cloudflare** e persistido no volume `traefik-acme` (`acme.json`). Mudanças na config estática (ex.: `ACME_EMAIL`) são detectadas pelo `deploy.sh`, que reinicia o traefik para aplicá-las; as rotas dinâmicas (weights) nunca exigem restart.
 
 Existem **dois modos de exposição pública** (diagramas na seção [Arquitetura](#arquitetura)):
 
