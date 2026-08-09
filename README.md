@@ -4,6 +4,28 @@ Frontend de autenticação em Vue 3 + Vite + TypeScript (Pinia, vue-router, Vite
 
 Autenticação por **cookie httpOnly** (SameSite=Lax) definido pelo backend — nenhum token exposto ao JavaScript (proteção contra XSS).
 
+## Tópicos
+
+- [Stack](#stack)
+- [Arquitetura](#arquitetura)
+  - [Visão geral do sistema](#visão-geral-do-sistema)
+  - [Modo direto (port-forward)](#modo-direto-port-forward)
+  - [Modo tunnel (Cloudflare Tunnel)](#modo-tunnel-cloudflare-tunnel)
+- [Configuração](#configuração)
+- [Contrato de API](#contrato-de-api)
+  - [Autenticação (cookie httpOnly)](#autenticação-cookie-httponly)
+  - [Endpoints](#endpoints)
+  - [Erros](#erros)
+  - [Anti double-submit](#anti-double-submit)
+- [Scripts](#scripts)
+- [Deploy (Docker / HTTPS)](#deploy-docker--https)
+  - [Arquitetura do blue-green](#arquitetura-do-blue-green)
+  - [Configuração (.env)](#configuração-env)
+  - [Uso](#uso)
+  - [Blue-green em detalhe](#blue-green-em-detalhe)
+  - [Exposição direta (port-forward)](#exposição-direta-port-forward)
+  - [Cloudflare Tunnel](#cloudflare-tunnel)
+
 ## Stack
 
 - Vue 3 (`<script setup>`) + TypeScript
@@ -140,113 +162,6 @@ Timeouts: 15s por requisição; falha de rede vira `HttpError(0, "Falha de conex
 ### Anti double-submit
 
 Cada ação do store (`login`, `register`, `forgotPassword`, `logout`, `validateSession`) retorna `false` imediatamente se já estiver em loading; `BaseButton` desabilita e mostra spinner enquanto a requisição roda.
-
-## Implementação do `/me` no backend (FastAPI)
-
-O backend já usa JWT + cookie httpOnly. `/me` decodifica o JWT do cookie, carrega o usuário e devolve as infos públicas. O cookie **deve** ter o mesmo nome usado no login.
-
-```python
-# schemas.py
-from pydantic import BaseModel, EmailStr
-from datetime import datetime
-
-class UserInfo(BaseModel):
-    username: str
-    email: EmailStr
-
-class MeResponse(BaseModel):
-    user: UserInfo
-    expires_at: datetime
-
-# routes/auth.py — router prefix="/api/v1"
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
-from jose import JWTError, jwt
-from .deps import get_db  # sessão SQLAlchemy
-from .schemas import MeResponse, UserInfo
-from .config import settings  # SECRET_KEY, JWT_ALGORITHM, COOKIE_NAME
-
-router = APIRouter()
-
-@router.get("/me", response_model=MeResponse)
-async def read_me(request: Request, db: Session = Depends(get_db)) -> MeResponse:
-    token = request.cookies.get(settings.COOKIE_NAME)
-    if not token:
-        raise HTTPException(status_code=401, detail="Não autenticado")
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        user_id = int(payload.get("sub"))
-        expires_at = datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
-    except (JWTError, TypeError, ValueError):
-        raise HTTPException(status_code=401, detail="Sessão inválida ou expirada")
-    user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Sessão inválida ou expirada")
-    return MeResponse(user=UserInfo(username=user.username, email=user.email), expires_at=expires_at)
-```
-
-E o login deve passar a **devolver o usuário e o `expires_at` no body** (mantendo o cookie):
-
-```python
-@router.post("/login")
-async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
-    user = authenticate(db, credentials.username, credentials.password)  # Argon2id
-    if user is None:
-        raise HTTPException(status_code=401, detail="Usuário ou senha inválidos")
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.TOKEN_MINUTES)
-    token = create_access_token({"sub": str(user.id), "exp": expires_at})
-    response = JSONResponse(
-        MeResponse(
-            user=UserInfo(username=user.username, email=user.email),
-            expires_at=expires_at,
-        ).model_dump(mode="json")
-    )
-    response.set_cookie(
-        key=settings.COOKIE_NAME,
-        value=token,
-        httponly=True,
-        samesite="lax",
-        secure=settings.ENV == "production",
-        max_age=settings.TOKEN_MINUTES * 60,
-        path="/",
-    )
-    return response
-```
-
-### Notas de cookie
-
-- `httponly=True` — invisível para JS (fonte da proteção contra XSS).
-- `samesite="lax"` — blinda contra CSRF em envios entre sites; no login apenas via formulário nativo sem JavaScript, sem prejuízo ao frontend.
-- `secure=True` em produção (HTTPS); o cookie **não** funciona se a página for servida em `http://`.
-- `path="/"` para valer em todas as rotas da API.
-- Funciona em máquinas diferentes desde que **frontend e API compartilhem o mesmo origin público** (ex.: nginx que proxy-a `/api` para a máquina do FastAPI). Origins diferentes (subdomínios/portas) não recebem cookie com SameSite=Lax.
-
-### CORS
-
-No mesmo origin (nginx), **não há CORS**. Se um dia frontend e API ficarem em origins diferentes, o backend precisa liberar apenas a origin do frontend com `credentials=True` (nunca `*`).
-
-### Exemplo de nginx
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name auth.exemplo.com;
-
-    root /var/www/login-frontend/dist;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    location /api/ {
-        proxy_pass http://10.0.0.5:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
 
 ## Scripts
 
