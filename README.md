@@ -12,6 +12,82 @@ Autenticação por **cookie httpOnly** (SameSite=Lax) definido pelo backend — 
 - Vitest (unit) + Playwright (e2e)
 - oxlint / ESLint / oxfmt
 
+## Arquitetura
+
+### Visão geral do sistema
+
+A aplicação é um SPA Vue 3 servido por nginx (container não-root, read-only) com 2 réplicas, atrás do **traefik** (TLS + ACME DNS-01 via Cloudflare). O frontend e o backend **FastAPI** compartilham o mesmo origin público (`/api/v1`), então o cookie httpOnly flui sem CORS. A máquina tem duas maneiras de expor o serviço: **modo direto** (port-forward no roteador) ou **Cloudflare Tunnel** (conexão de saída do `cloudflared`, sem abrir portas).
+
+```mermaid
+flowchart TB
+    U([Usuário / Browser<br/>Vue 3 SPA])
+
+    subgraph CF["Cloudflare"]
+        DNS["DNS — registro A (direto)<br/>ou CNAME do túnel"]
+        EDGE["Edge"]
+    end
+
+    LE["Let's Encrypt<br/>ACME DNS-01 via CF_DNS_API_TOKEN"]
+
+    subgraph HOST["Máquina (Docker Compose)"]
+        direction TB
+        subgraph INGRESS["Ingress — rede edge"]
+            TRAEFIK["Traefik v3<br/>web (:80) + websecure (:443)<br/>ACME DNS-01 · Docker provider · metrics"]
+            CFT["cloudflared — túnel de saída<br/>(só no modo --tunnel)"]
+        end
+        subgraph APP["Aplicação — rede edge"]
+            FE1["frontend réplica 1 — nginx non-root · read-only (dist/)"]
+            FE2["frontend réplica 2 — nginx non-root · read-only (dist/)"]
+        end
+        REDIS["Redis 7 — rede internal"]
+        OPS["autoheal · watchtower"]
+        OBS["Prometheus · Grafana · node-exporter<br/>(--observability, rede edge)"]
+    end
+
+    API["FastAPI — backend /api/v1 · cookie httpOnly<br/>(mesmo origin público)"]
+
+    U -->|"direto: https://DOMAIN:PORT"| TRAEFIK
+    U -->|"tunnel: https://DOMAIN"| EDGE
+    EDGE -->|CNAME do túnel| CFT
+    CFT -->|"https://traefik:443"| TRAEFIK
+    TRAEFIK -->|"Host(DOMAIN) · TLS"| FE1
+    TRAEFIK -->|"Host(DOMAIN) · TLS"| FE2
+    TRAEFIK -->|DNS-01| LE
+    FE1 & FE2 -->|"/api/v1 (mesmo origin)"| API
+    API -.->|sessões/rate-limit| REDIS
+    OBS -.->|"scrape traefik:8080 · node-exporter:9100"| TRAEFIK
+```
+
+### Modo direto (port-forward)
+
+O traefik publica a porta `PORT` do host; o registro **A** do `DOMAIN` aponta para o IP público e o roteador faz port-forward. O certificado é obtido por **DNS-01** — as portas 80/443 não precisam estar abertas na internet.
+
+```mermaid
+flowchart LR
+    U([Browser]) -->|"https://DOMAIN:PORT"| D["Cloudflare DNS<br/>registro A: DOMAIN → IP público<br/>(DNS-only, sem proxy)"]
+    D --> RT["Router<br/>port-forward externo PORT → máquina:PORT"]
+    RT -->|"TCP :PORT"| TR["Traefik — publica PORT:443<br/>TLS · cert Let's Encrypt"]
+    TR -->|"desafio DNS-01"| LE["Let's Encrypt<br/>CF_DNS_API_TOKEN — portas 80/443 fechadas"]
+    TR --> FE["frontend nginx (replicas=2)"]
+    FE --> API["FastAPI /api/v1 · cookie httpOnly"]
+```
+
+### Modo tunnel (Cloudflare Tunnel)
+
+O `cloudflared` abre uma conexão de saída para a edge da Cloudflare — nenhuma porta precisa ser aberta. O TLS do browser termina na edge; o cert Let's Encrypt de `DOMAIN` continua valendo no trecho edge→origin.
+
+```mermaid
+flowchart LR
+    U([Browser]) -->|"https://DOMAIN"| E["Cloudflare edge<br/>TLS terminado na edge"]
+    E -->|"CNAME do túnel (automático)"| C["cloudflared<br/>conexão de saída — sem port-forward"]
+    C -->|"https://traefik:443<br/>Origin Server Name = DOMAIN"| TR["Traefik<br/>cert Let's Encrypt de DOMAIN no trecho edge→origin"]
+    TR -->|DNS-01| LE["Let's Encrypt"]
+    TR --> FE["frontend nginx (replicas=2)"]
+    FE --> API["FastAPI /api/v1 · cookie httpOnly"]
+```
+
+Os detalhes de deploy dos dois modos estão em [Deploy (Docker / HTTPS)](#deploy-docker--https).
+
 ## Configuração
 
 ```sh
@@ -223,7 +299,7 @@ Arquivos de deploy:
 
 O traefik usa **config estática renderizada por `envsubst`** (`traefik.generated.yaml`): quando um arquivo estático existe, flags/env do CLI são ignoradas, e env vars não são interpoladas dentro do YAML. O certificado é obtido por **DNS-01 via Cloudflare** e persistido no volume `traefik-acme` (`acme.json`).
 
-Existem **dois modos de exposição pública**:
+Existem **dois modos de exposição pública** (diagramas na seção [Arquitetura](#arquitetura)):
 
 - **Modo direto** (`./deploy.sh`): o traefik publica a porta `PORT` do host e o registro A do `DOMAIN` aponta para o IP público da máquina, com port-forward no roteador.
 - **Modo tunnel** (`./deploy.cloudflared.sh`): o `cloudflared` abre um túnel de saída para a edge da Cloudflare — nenhuma porta precisa ser aberta (ideal para IP dinâmico, CGNAT ou firewall que bloqueia portas).
