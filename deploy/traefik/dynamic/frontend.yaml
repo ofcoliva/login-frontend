@@ -1,18 +1,7 @@
-# deploy/traefik/dynamic/frontend.yaml
-# Roteamento dinâmico do frontend (file provider do traefik).
-# Este arquivo é REGENERADO pelo deploy/scripts/deploy.sh a cada operação:
-#   - DOMAIN vem do .env
-#   - weights blue/green são a fonte de verdade do switch (100/0 ou 0/100)
-# A versão commitada aqui é apenas o seed inicial (DOMAIN=localhost, blue=100)
-# para permitir um "docker compose up" direto sem passar pelo deploy.sh.
-#
-# O traefik monitora este diretório (providers.file.directory + watch) e
-# recarrega automaticamente ao trocar os weights — é isso que torna o
-# cutover/rollback atômico e sem downtime.
 http:
   routers:
     frontend:
-      rule: "Host(`localhost`)"
+      rule: "Host(`login.ofcoliva.com.br`)"
       entryPoints:
         - websecure
       service: frontend-wrr
@@ -23,7 +12,7 @@ http:
         - frontend-secureheaders
 
     frontend-http:
-      rule: "Host(`localhost`)"
+      rule: "Host(`login.ofcoliva.com.br`)"
       entryPoints:
         - web
       service: frontend-wrr
@@ -54,9 +43,9 @@ http:
       weighted:
         services:
           - name: frontend-blue
-            weight: 100
-          - name: frontend-green
             weight: 0
+          - name: frontend-green
+            weight: 100
 
     frontend-blue:
       loadBalancer:
