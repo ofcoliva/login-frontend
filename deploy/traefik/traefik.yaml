@@ -20,11 +20,6 @@ api:
 ping:
   entryPoint: web
 
-metrics:
-  prometheus:
-    addEntryPointsLabels: true
-    addServicesLabels: true
-
 certificatesResolvers:
   letsencrypt:
     acme:

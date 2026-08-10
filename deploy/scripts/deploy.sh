@@ -10,7 +10,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
-OBSERVABILITY=false
 TUNNEL=false
 BUILD=true
 
@@ -33,7 +32,6 @@ Comandos:
   down                    Derruba todo o stack (infra + slots).
 
 Opções:
-  -o, --observability     Inclui prometheus, grafana e node-exporter.
   -t, --tunnel            Inclui o Cloudflare Tunnel à frente do traefik.
       --no-build          Não constrói; usa/puxa a imagem com a tag <sha> já
                           publicada (ex.: GHCR).
@@ -53,7 +51,6 @@ EOF
 ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -o | --observability) OBSERVABILITY=true; shift ;;
     -t | --tunnel) TUNNEL=true; shift ;;
     --no-build) BUILD=false; shift ;;
     -h | --help) usage; exit 0 ;;
@@ -67,9 +64,6 @@ COMMAND="${ARGS[0]:-deploy}"
 # ---- arquivos de compose (project-directory = raiz do repositório) ----
 COMPOSE_ARGS=(--project-directory "$REPO_ROOT")
 BASE_FILES=(-f "$COMPOSE_DIR/base.yaml")
-if $OBSERVABILITY; then
-  BASE_FILES+=(-f "$COMPOSE_DIR/observability.yaml")
-fi
 if $TUNNEL; then
   BASE_FILES+=(-f "$COMPOSE_DIR/cloudflared.yaml")
 fi
