@@ -62,7 +62,6 @@ flowchart TB
             G["frontend-green — nginx non-root · read-only (dist/)"]
         end
         OPS["autoheal · watchtower"]
-        OBS["Prometheus · Grafana · node-exporter<br/>(--observability, rede edge)"]
     end
 
     API["FastAPI — backend /api/v1 · cookie httpOnly<br/>(mesmo origin público)"]
@@ -75,7 +74,6 @@ flowchart TB
     TRAEFIK -->|"WRR 100/0 (switch de weights = cutover/rollback)"| G
     TRAEFIK -->|DNS-01| LE
     B & G -->|"/api/v1 (mesmo origin)"| API
-    OBS -.->|"scrape traefik:8080 · node-exporter:9100"| TRAEFIK
 ```
 
 ### Modo direto (port-forward)
@@ -184,7 +182,6 @@ O deploy é **blue-green**: o frontend roda em 2 slots (`frontend-blue` e `front
 
 - **`deploy/compose/base.yaml`** — infra: traefik, autoheal, watchtower (+ networks/volumes).
 - **`deploy/compose/frontend.yaml`** — slots `frontend-blue`/`frontend-green` (1 réplica cada; imagem vem de `FRONTEND_IMAGE`, tag única por deploy).
-- **`deploy/compose/observability.yaml`** — prometheus, grafana, node-exporter (flag `--observability`).
 - **`deploy/compose/cloudflared.yaml`** — Cloudflare Tunnel (flag `--tunnel`).
 - **`deploy/traefik/traefik.yaml`** — config estática do traefik (template; renderizada por `envsubst` → `traefik.generated.yaml`, gitignored).
 - **`deploy/traefik/dynamic/frontend.yaml`** — routers + middlewares + **service weighted (WRR)** do traefik. Os **weights são a fonte de verdade do cutover/rollback**; o arquivo é regenerado pelo `deploy.sh` e recarregado automaticamente (file provider + `watch`).
@@ -267,14 +264,12 @@ sequenceDiagram
 | `CF_TUNNEL_TOKEN` | — | Token do Cloudflare Tunnel (modo `--tunnel`) |
 | `VITE_API_BASE_URL` | `/api/v1` | Base da API embutida no build do frontend |
 | `DOCKER_IMAGE_OWNER` | `ofcoliva` | Owner da imagem no GHCR |
-| `GRAFANA_ADMIN_USER`/`GRAFANA_ADMIN_PASSWORD` | `admin` | Credenciais iniciais do Grafana |
 
 ### Uso
 
 ```sh
 ./deploy.sh                    # deploy blue/green com build local
 ./deploy.sh --no-build         # usa a imagem já publicada (tag <short-sha> no GHCR)
-./deploy.sh --observability    # + prometheus/grafana/node-exporter
 ./deploy.sh --tunnel           # + Cloudflare Tunnel (requer CF_TUNNEL_TOKEN)
 ./deploy.cloudflared.sh        # atalho para --tunnel
 ./deploy.sh status             # slots, imagens, health e weights atuais
