@@ -2,6 +2,7 @@ import { request } from './http'
 import type {
   ChangeEmailPayload,
   ChangePasswordPayload,
+  ChangeUsernamePayload,
   ForgotPasswordPayload,
   LoginPayload,
   LoginResponse,
@@ -41,6 +42,10 @@ export function changePassword(payload: ChangePasswordPayload): Promise<void> {
 
 export function changeEmail(payload: ChangeEmailPayload): Promise<MeResponse> {
   return request<MeResponse>('/change_email', { method: 'PATCH', body: payload, auth: true })
+}
+
+export function changeUsername(payload: ChangeUsernamePayload): Promise<MeResponse> {
+  return request<MeResponse>('/change_username', { method: 'PATCH', body: payload, auth: true })
 }
 
 export function listSessions(): Promise<SessionsResponse> {

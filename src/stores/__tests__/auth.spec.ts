@@ -403,4 +403,95 @@ describe('auth store', () => {
     expect(store.error).toBe('Email já em uso')
     expect(store.user?.email).toBe('joao@email.com')
   })
+
+  it('changeUsername envia new_username e password via PATCH, sem trim', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(responseFor(200, {}))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = useAuthStore()
+    const ok = await store.changeUsername({
+      new_username: 'novo_usuario_2026',
+      password: VALID_PASSWORD,
+    })
+
+    expect(ok).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${API_BASE_URL}/change_username`)
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(String(init.body))).toEqual({
+      new_username: 'novo_usuario_2026',
+      password: VALID_PASSWORD,
+    })
+  })
+
+  it('changeUsername atualiza e persiste o username retornado', async () => {
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString()
+    localStorage.setItem(AUTH_SESSION_KEY, '1')
+    localStorage.setItem(
+      AUTH_USER_KEY,
+      JSON.stringify({ username: 'joao', email: 'joao@email.com' }),
+    )
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        responseFor(200, {
+          user: { username: 'novo_usuario_2026', email: 'joao@email.com' },
+          expires_at: expiresAt,
+        }),
+      ),
+    )
+
+    const store = useAuthStore()
+    const ok = await store.changeUsername({
+      new_username: 'novo_usuario_2026',
+      password: VALID_PASSWORD,
+    })
+
+    expect(ok).toBe(true)
+    expect(store.user?.username).toBe('novo_usuario_2026')
+    expect(store.user?.email).toBe('joao@email.com')
+    expect(localStorage.getItem(AUTH_USER_KEY)).toContain('novo_usuario_2026')
+    expect(store.expiresAt).toBe(Date.parse(expiresAt))
+    store.clearSession()
+  })
+
+  it('changeUsername com erro 409 mantém o username atual', async () => {
+    localStorage.setItem(AUTH_SESSION_KEY, '1')
+    localStorage.setItem(
+      AUTH_USER_KEY,
+      JSON.stringify({ username: 'joao', email: 'joao@email.com' }),
+    )
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(responseFor(409, { detail: 'Username já está em uso' })),
+    )
+
+    const store = useAuthStore()
+    const ok = await store.changeUsername({
+      new_username: 'joao',
+      password: VALID_PASSWORD,
+    })
+
+    expect(ok).toBe(false)
+    expect(store.error).toBe('Username já está em uso')
+    expect(store.user?.username).toBe('joao')
+  })
+
+  it('changeUsername com erro 400 de senha define a mensagem', async () => {
+    localStorage.setItem(AUTH_SESSION_KEY, '1')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(responseFor(400, { detail: 'Senha atual incorreta' })),
+    )
+
+    const store = useAuthStore()
+    const ok = await store.changeUsername({
+      new_username: 'novo_usuario_2026',
+      password: 'errada',
+    })
+
+    expect(ok).toBe(false)
+    expect(store.error).toBe('Senha atual incorreta')
+  })
 })

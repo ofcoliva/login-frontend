@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import ChangeEmailForm from '@/components/auth/ChangeEmailForm.vue'
 import ChangePasswordForm from '@/components/auth/ChangePasswordForm.vue'
+import ChangeUsernameForm from '@/components/auth/ChangeUsernameForm.vue'
 import DeviceSessions from '@/components/auth/DeviceSessions.vue'
 import ThemeToggle from '@/components/auth/ThemeToggle.vue'
 
@@ -23,7 +24,9 @@ const groups: SettingsGroup[] = [
     key: 'appearance',
     label: 'Aparência',
     description: 'Tema claro ou escuro.',
-    options: [{ key: 'theme', label: 'Tema', description: 'Alterne entre os temas claro e escuro.' }],
+    options: [
+      { key: 'theme', label: 'Tema', description: 'Alterne entre os temas claro e escuro.' },
+    ],
   },
   {
     key: 'security',
@@ -34,6 +37,11 @@ const groups: SettingsGroup[] = [
         key: 'change-password',
         label: 'Alterar senha',
         description: 'Defina uma nova senha e escolha quais dispositivos permanecem conectados.',
+      },
+      {
+        key: 'change-username',
+        label: 'Trocar username',
+        description: 'Altere o nome de usuário usado para acessar a conta.',
       },
       {
         key: 'change-email',
@@ -52,7 +60,11 @@ const groups: SettingsGroup[] = [
     label: 'Notificações',
     description: 'Preferências de email e alertas.',
     options: [
-      { key: 'preferences', label: 'Preferências', description: 'Configuração de alertas por email.' },
+      {
+        key: 'preferences',
+        label: 'Preferências',
+        description: 'Configuração de alertas por email.',
+      },
     ],
   },
 ]
@@ -151,7 +163,9 @@ function backToOptions(): void {
             <div class="settings-row">
               <div class="settings-row__text">
                 <span class="settings-row__label">Tema</span>
-                <span class="settings-row__description">Alterne entre os temas claro e escuro.</span>
+                <span class="settings-row__description"
+                  >Alterne entre os temas claro e escuro.</span
+                >
               </div>
               <ThemeToggle />
             </div>
@@ -159,6 +173,10 @@ function backToOptions(): void {
 
           <div v-else-if="activeOption === 'change-password'" class="settings-content">
             <ChangePasswordForm />
+          </div>
+
+          <div v-else-if="activeOption === 'change-username'" class="settings-content">
+            <ChangeUsernameForm />
           </div>
 
           <div v-else-if="activeOption === 'change-email'" class="settings-content">

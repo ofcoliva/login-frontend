@@ -6,6 +6,7 @@ import { HttpError } from '@/services/http'
 import type {
   ChangeEmailPayload,
   ChangePasswordPayload,
+  ChangeUsernamePayload,
   ForgotPasswordPayload,
   LoginPayload,
   RegisterPayload,
@@ -26,6 +27,7 @@ export const useAuthStore = defineStore('auth', () => {
   const logoutLoading = ref(false)
   const changePasswordLoading = ref(false)
   const changeEmailLoading = ref(false)
+  const changeUsernameLoading = ref(false)
 
   let expiryTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -241,6 +243,28 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function changeUsername(payload: ChangeUsernamePayload): Promise<boolean> {
+    if (changeUsernameLoading.value) return false
+    changeUsernameLoading.value = true
+    error.value = null
+    try {
+      const response = await authApi.changeUsername(payload)
+      user.value = { ...user.value, ...(response.user ?? { username: payload.new_username }) }
+      persistUser(user.value)
+      if (response.expires_at !== undefined) {
+        expiresAt.value = parseExpiresAt(response.expires_at)
+        persistExpiresAt(expiresAt.value)
+        scheduleSessionExpiry()
+      }
+      return true
+    } catch (err) {
+      setError(err)
+      return false
+    } finally {
+      changeUsernameLoading.value = false
+    }
+  }
+
   async function validateSession(): Promise<boolean> {
     if (!sessionActive.value) return false
     if (sessionExpired()) {
@@ -292,11 +316,13 @@ export const useAuthStore = defineStore('auth', () => {
     logoutLoading,
     changePasswordLoading,
     changeEmailLoading,
+    changeUsernameLoading,
     login,
     register,
     forgotPassword,
     changePassword,
     changeEmail,
+    changeUsername,
     validateSession,
     sessionExpired,
     logout,

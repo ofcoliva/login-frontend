@@ -25,6 +25,11 @@ export interface ChangeEmailPayload {
   password: string
 }
 
+export interface ChangeUsernamePayload {
+  new_username: string
+  password: string
+}
+
 export interface LoginResponse {
   user?: UserInfo
   expires_at?: string

@@ -70,6 +70,11 @@ async function openEmailForm(wrapper: ReturnType<typeof mountSettings>) {
   await findButton(wrapper, 'Trocar email').trigger('click')
 }
 
+async function openUsernameForm(wrapper: ReturnType<typeof mountSettings>) {
+  await findButton(wrapper, 'Segurança').trigger('click')
+  await findButton(wrapper, 'Trocar username').trigger('click')
+}
+
 describe('SettingsView', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -145,9 +150,7 @@ describe('SettingsView', () => {
     })
 
     const passwordForm = wrapper.findAll('form')[0]!
-    await passwordForm
-      .get('input[autocomplete="current-password"]')
-      .setValue('SenhaAtual123!')
+    await passwordForm.get('input[autocomplete="current-password"]').setValue('SenhaAtual123!')
     const newPasswordInputs = passwordForm.findAll('input[autocomplete="new-password"]')
     await newPasswordInputs[0]!.setValue('SenhaForte123!')
     await newPasswordInputs[1]!.setValue('SenhaForte123!')
@@ -287,5 +290,112 @@ describe('SettingsView', () => {
       String(call[0]).endsWith('/sessions/sessao-2'),
     ) as [string, RequestInit]
     expect(init.method).toBe('DELETE')
+  })
+
+  it('username inválido não abre o diálogo de confirmação', async () => {
+    stubFetchWithSessions()
+    const wrapper = mountSettings()
+    useAuthStore().user = { username: 'joao', email: 'joao@email.com' }
+    await openUsernameForm(wrapper)
+
+    const usernameForm = wrapper.findAll('form')[0]!
+    await usernameForm.get('input[autocomplete="username"]').setValue('joao silva')
+    await usernameForm.trigger('submit')
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Username inválido')
+  })
+
+  it('username igual ao atual não abre o diálogo de confirmação', async () => {
+    stubFetchWithSessions()
+    const wrapper = mountSettings()
+    useAuthStore().user = { username: 'joao', email: 'joao@email.com' }
+    await openUsernameForm(wrapper)
+
+    const usernameForm = wrapper.findAll('form')[0]!
+    await usernameForm.get('input[autocomplete="username"]').setValue('joao')
+    await usernameForm.trigger('submit')
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('O novo username deve ser diferente do atual.')
+  })
+
+  it('troca de username confirma com senha e mostra sucesso', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/sessions')) {
+        return Promise.resolve(responseFor(200, SESSIONS))
+      }
+      if (url.endsWith('/api/v1/change_username')) {
+        return Promise.resolve(
+          responseFor(200, { user: { username: 'novo_usuario_2026', email: 'joao@email.com' } }),
+        )
+      }
+      return Promise.resolve(responseFor(404, { detail: 'Not found' }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountSettings()
+    useAuthStore().user = { username: 'joao', email: 'joao@email.com' }
+    await openUsernameForm(wrapper)
+
+    const usernameForm = wrapper.findAll('form')[0]!
+    await usernameForm.get('input[autocomplete="username"]').setValue('novo_usuario_2026')
+    await usernameForm.trigger('submit')
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Tem certeza que deseja trocar o username da conta para')
+    expect(wrapper.text()).toContain('novo_usuario_2026')
+
+    const confirmButton = findButton(wrapper, 'Confirmar troca')
+    await confirmButton.trigger('click')
+    expect(wrapper.text()).toContain('Informe sua senha para confirmar')
+
+    await usernameForm.get('input[autocomplete="current-password"]').setValue('SenhaForte123!')
+    await confirmButton.trigger('click')
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Username da conta alterado para')
+    })
+    expect(wrapper.text()).toContain('novo_usuario_2026')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+
+    const [, init] = fetchMock.mock.calls.find((call) =>
+      String(call[0]).endsWith('/change_username'),
+    ) as [string, RequestInit]
+    expect(JSON.parse(String(init.body))).toEqual({
+      new_username: 'novo_usuario_2026',
+      password: 'SenhaForte123!',
+    })
+  })
+
+  it('erro 409 do backend aparece no campo do username', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/sessions')) {
+        return Promise.resolve(responseFor(200, SESSIONS))
+      }
+      if (url.endsWith('/api/v1/change_username')) {
+        return Promise.resolve(responseFor(409, { detail: 'Username já está em uso' }))
+      }
+      return Promise.resolve(responseFor(404, { detail: 'Not found' }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountSettings()
+    useAuthStore().user = { username: 'joao', email: 'joao@email.com' }
+    await openUsernameForm(wrapper)
+
+    const usernameForm = wrapper.findAll('form')[0]!
+    await usernameForm.get('input[autocomplete="username"]').setValue('maria')
+    await usernameForm.trigger('submit')
+    await findButton(wrapper, 'Confirmar troca').trigger('click')
+    await usernameForm.get('input[autocomplete="current-password"]').setValue('SenhaForte123!')
+    await findButton(wrapper, 'Confirmar troca').trigger('click')
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Username já está em uso')
+    })
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   })
 })
