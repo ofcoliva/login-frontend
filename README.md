@@ -4,6 +4,23 @@ Frontend de autenticação em Vue 3 + Vite + TypeScript (Pinia, vue-router, Vite
 
 Autenticação por **cookie httpOnly** (SameSite=Lax) definido pelo backend — nenhum token exposto ao JavaScript (proteção contra XSS).
 
+## Imagens
+
+<!-- ### Dashboard -->
+<!-- ![Dashboard](images/dashboard.png) -->
+
+### Login
+![Tela de login](images/login.png)
+
+### Cadastro
+![Tela de Cadastro](images/register.png)
+
+### Configurações
+![Tela de Configurações](images/settings.png)
+
+### Segurança
+![Segurança](images/security.png)
+
 ## Tópicos
 
 - [Stack](#stack)
