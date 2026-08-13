@@ -2,7 +2,6 @@
 defineProps<{
   title: string
   subtitle?: string
-  error?: string | null
 }>()
 </script>
 
@@ -12,10 +11,6 @@ defineProps<{
       <h1 class="auth-card__title">{{ title }}</h1>
       <p v-if="subtitle" class="auth-card__subtitle">{{ subtitle }}</p>
     </header>
-
-    <div v-if="error" :key="error" class="auth-card__alert" role="alert">
-      {{ error }}
-    </div>
 
     <slot />
   </section>
@@ -48,18 +43,5 @@ defineProps<{
 .auth-card__subtitle {
   color: var(--color-text-muted);
   font-size: 0.9rem;
-}
-
-.auth-card__alert {
-  padding: 0.6rem 0.85rem;
-  margin-bottom: 1rem;
-  border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
-  background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
-  color: var(--color-danger);
-  font-size: 0.85rem;
-  animation:
-    fade-in 0.25s ease,
-    shake 0.4s ease;
 }
 </style>

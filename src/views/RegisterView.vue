@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import AuthCard from '@/components/auth/AuthCard.vue'
 import BaseButton from '@/components/auth/BaseButton.vue'
 import EmailRequirements from '@/components/auth/EmailRequirements.vue'
+import FormAlert from '@/components/auth/FormAlert.vue'
 import PasswordRequirements from '@/components/auth/PasswordRequirements.vue'
 import TextField from '@/components/auth/TextField.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -75,7 +76,6 @@ async function onSubmit() {
       v-if="!success"
       title="Criar conta"
       subtitle="Registre-se para começar"
-      :error="error"
     >
       <form class="auth-form" novalidate @submit.prevent="onSubmit">
         <TextField
@@ -114,6 +114,7 @@ async function onSubmit() {
           :error="fieldErrors.confirmPassword"
           autocomplete="new-password"
         />
+        <FormAlert :message="error" />
         <BaseButton :loading="registerLoading" block>Cadastrar</BaseButton>
       </form>
       <p class="auth-form__footer">

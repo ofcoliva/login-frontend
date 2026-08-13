@@ -4,6 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import AuthCard from '@/components/auth/AuthCard.vue'
 import BaseButton from '@/components/auth/BaseButton.vue'
+import FormAlert from '@/components/auth/FormAlert.vue'
 import TextField from '@/components/auth/TextField.vue'
 import { useAuthStore } from '@/stores/auth'
 import { isValidEmail } from '@/utils/validators'
@@ -34,7 +35,6 @@ async function onSubmit() {
       v-if="!sent"
       title="Recuperar senha"
       subtitle="Informe seu email para receber o link de redefinição"
-      :error="error"
     >
       <form class="auth-form" novalidate @submit.prevent="onSubmit">
         <TextField
@@ -44,6 +44,7 @@ async function onSubmit() {
           :error="emailError"
           autocomplete="email"
         />
+        <FormAlert :message="error" />
         <BaseButton :loading="forgotPasswordLoading" block> Enviar link </BaseButton>
       </form>
       <p class="auth-form__footer">

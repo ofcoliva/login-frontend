@@ -4,6 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import AuthCard from '@/components/auth/AuthCard.vue'
 import BaseButton from '@/components/auth/BaseButton.vue'
+import FormAlert from '@/components/auth/FormAlert.vue'
 import TextField from '@/components/auth/TextField.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -36,7 +37,7 @@ async function onSubmit() {
 
 <template>
   <main class="auth-page">
-    <AuthCard title="Entrar" subtitle="Acesse sua conta para continuar" :error="error">
+    <AuthCard title="Entrar" subtitle="Acesse sua conta para continuar">
       <form class="auth-form" novalidate @submit.prevent="onSubmit">
         <TextField
           v-model="form.username"
@@ -54,6 +55,7 @@ async function onSubmit() {
         <div class="auth-form__row">
           <RouterLink to="/forgot-password" class="auth-form__link"> Esqueceu a senha? </RouterLink>
         </div>
+        <FormAlert :message="error" />
         <BaseButton :loading="loginLoading" block>Entrar</BaseButton>
       </form>
       <p class="auth-form__footer">
