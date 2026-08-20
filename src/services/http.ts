@@ -53,7 +53,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   } catch (error) {
     if (error instanceof HttpError) throw error
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new HttpError(0, 'Tempo de conexão esgotado')
+      throw new HttpError(0, 'Serviço indisponível no momento.') // Tempo de conexão esgotado
     }
     throw new HttpError(0, 'Falha de conexão com o servidor')
   } finally {
